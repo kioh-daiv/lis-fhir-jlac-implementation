@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FHIR / JLAC11 実装ガイド — 検査データを標準で繋ぐ</title>
+<meta name="description" content="臨床検査データを HL7 FHIR R4（JP Core / JP-CLINS）と JLAC11 で相互運用可能にする実装ガイド。DiagnosticReport/Observation/Specimen のリソース設計、JLAC10→JLAC11 とローカルコードの名寄せ、HL7 v2→FHIR 変換、電子カルテ情報共有サービス接続を、医療DXシリーズの一編として整理。">
+<link rel="canonical" href="https://kioh-daiv.github.io/lis-fhir-jlac-implementation/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="X Harumi 医療DX シリーズ">
+<meta property="og:title" content="FHIR / JLAC11 実装ガイド — 検査データを標準で繋ぐ">
+<meta property="og:description" content="検査データを HL7 FHIR R4（JP Core/JP-CLINS）と JLAC11 で相互運用可能にする実装ガイド。リソース設計・コード変換・電子カルテ情報共有サービス接続。">
+<meta property="og:url" content="https://kioh-daiv.github.io/lis-fhir-jlac-implementation/">
+<meta property="og:image" content="https://kioh-daiv.github.io/medical-dx-cloud-guides/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="FHIR / JLAC11 実装ガイド — 検査データを標準で繋ぐ">
+<meta name="twitter:description" content="検査データを HL7 FHIR R4 と JLAC11 で相互運用可能にする実装ガイド。リソース設計・コード変換・電子カルテ情報共有サービス接続。">
+<meta name="twitter:image" content="https://kioh-daiv.github.io/medical-dx-cloud-guides/og.png">
+<style>
+:root{
+  --primary:#0e4d92; --primary-light:#2563eb; --accent:#4338ca; --accent2:#6366f1;
+  --std:#4338ca; --std-bg:#eef2ff; --std-bd:#c7d2fe;
+  --warn:#d97706; --warn-bg:#fffbeb; --warn-bd:#fde68a;
+  --ok:#059669; --ok-bg:#ecfdf5; --ok-bd:#a7f3d0;
+  --bg:#f8fafc; --bg-card:#fff; --text:#1f2937; --text-soft:#6b7280; --border:#e5e7eb;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Hiragino Sans","Yu Gothic","Meiryo",-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.75;font-size:15px}
+.wrap{max-width:1000px;margin:0 auto;padding:0 20px}
+a{color:var(--primary-light)}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12.5px;font-family:"SFMono-Regular",Consolas,monospace}
+
+header{background:linear-gradient(135deg,#0e4d92 0%,#3730a3 55%,#4338ca 100%);color:#fff;padding:52px 0 42px;text-align:center}
+header .tag{display:inline-block;font-size:12.5px;font-weight:700;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);padding:4px 14px;border-radius:20px;margin-bottom:16px}
+header .tag .l{opacity:.85;font-weight:500}
+header h1{font-size:26px;font-weight:700;margin-bottom:12px;line-height:1.45}
+header p{font-size:14.5px;opacity:.93;max-width:800px;margin:0 auto}
+
+section{margin:30px 0}
+h2{font-size:20px;color:var(--primary);font-weight:700;margin:34px 0 14px;padding-bottom:9px;border-bottom:2px solid var(--accent);display:flex;align-items:center;gap:10px}
+h2 .n{background:var(--accent);color:#fff;font-size:14px;width:28px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+h3{font-size:16px;color:var(--primary);margin:20px 0 8px}
+p{margin:9px 0}
+.lead{color:var(--text-soft);font-size:14px}
+ul,ol{margin:8px 0 8px 22px}
+li{margin:5px 0}
+
+.intro{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:22px 26px;margin:28px 0 8px}
+.intro h2{margin-top:0;border:0;padding:0;font-size:17px}
+.callout{border-radius:10px;padding:15px 19px;margin:14px 0;background:var(--std-bg);border:1px solid var(--std-bd);border-left:4px solid var(--std)}
+.callout .lab{font-size:12px;font-weight:700;letter-spacing:.06em;margin-bottom:4px;color:var(--std)}
+.note{background:var(--warn-bg);border:1px solid var(--warn-bd);border-left:4px solid var(--warn);border-radius:10px;padding:14px 18px;margin:14px 0;font-size:13.5px}
+.note b{color:var(--warn)}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:10px 0}
+th{background:var(--primary);color:#fff;font-weight:600;padding:10px 12px;text-align:left;font-size:12.5px}
+td{padding:10px 12px;border-top:1px solid var(--border);vertical-align:top}
+tr:nth-child(even) td{background:#fafbfc}
+.res{font-weight:800;color:var(--accent);white-space:nowrap}
+
+/* 変換フロー */
+.flow{display:flex;align-items:stretch;gap:5px;flex-wrap:wrap;margin:10px 0}
+.flow .s{flex:1;min-width:120px;background:var(--bg-card);border:1px solid var(--border);border-top:3px solid var(--std);border-radius:9px;padding:12px 13px;text-align:center}
+.flow .s .t{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:3px}
+.flow .s .d{font-size:11px;color:var(--text-soft)}
+.flow .a{display:flex;align-items:center;color:var(--std);font-weight:700}
+
+.chk{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:8px 8px 8px 0}
+.chk li{list-style:none;margin:0;padding:9px 14px 9px 40px;position:relative;border-bottom:1px solid #f1f5f9;font-size:13.5px}
+.chk li:last-child{border-bottom:0}
+.chk li::before{content:"!";position:absolute;left:16px;top:9px;color:var(--warn);font-weight:700}
+.chk li b{color:var(--primary)}
+
+footer{margin:42px 0 60px}
+.refs{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;font-size:12.5px}
+.refs h3{margin-top:0}
+.refs ul{margin-left:18px} .refs li{margin:4px 0}
+.disc{max-width:820px;margin:16px auto 8px;font-size:11.5px;color:var(--text-soft);text-align:left;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px 18px}
+.sig{text-align:center;color:var(--text-soft);font-size:12.5px}
+.series-nav{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin:16px 0;font-size:13px;line-height:2.1}
+.series-nav b{color:var(--primary)} .series-nav a{margin:0 6px;color:var(--primary-light)}
+
+@media(max-width:720px){
+  header h1{font-size:20px}
+  .flow{flex-direction:column} .flow .a{transform:rotate(90deg);justify-content:center}
+  table{font-size:12px} th,td{padding:8px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="tag">医療DX シリーズ <span class="l">／ FHIR・JLAC11 実装</span></div>
+    <h1>FHIR / JLAC11 実装ガイド<br>検査データを標準で繋ぐ</h1>
+    <p>「FHIR 対応は要件」で止まっていた話の<b>実装版</b>。検査データを HL7 FHIR R4（JP Core / JP-CLINS）と JLAC11 で相互運用可能にする。リソース設計、JLAC10→JLAC11 とローカルコードの名寄せ、HL7 v2 からの変換、電子カルテ情報共有サービスへの接続まで、How に踏み込む。</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="series-nav">
+    <b>医療DX シリーズ：</b>
+    <a href="https://kioh-daiv.github.io/medical-dx-cloud-guides/">目次</a>
+    <a href="https://kioh-daiv.github.io/medical-dx-roadmap-overview/">① 工程表</a>
+    <a href="https://kioh-daiv.github.io/lis-cloud-compliance-guide/">② 法規制と技術要件</a>
+    <a href="https://kioh-daiv.github.io/lis-procurement-qualifications/">③ 受注資格</a>
+    <a href="https://kioh-daiv.github.io/lis-web-secure-implementation/">④ セキュア実装</a>
+    <a href="https://kioh-daiv.github.io/lis-data-integrity-guide/">データインテグリティ</a>
+    <a href="https://kioh-daiv.github.io/medical-dx-ai-regulation/">AI 活用</a>
+    <a href="https://kioh-daiv.github.io/lis-cloud-migration-playbook/">移行</a>
+    <b style="margin-left:6px">★ FHIR/JLAC11（本編）</b>
+  </div>
+
+  <div class="intro">
+    <h2>「FHIR 対応は要件」の、その先の How</h2>
+    <p>シリーズ②は「標準規格対応は要件」「相互運用は主導権の分水嶺」と書いた。だが<b>どう実装するか</b>は全編で空白だった。本編がその実装版。検査データを国際標準 HL7 FHIR と国内コード JLAC で<b>他システムが解釈できる形</b>にし、電子カルテ情報共有サービスに繋ぐところまでを扱う。</p>
+    <p>相互運用の核心は<b>「データの意味を、相手のシステムにも分かる形で持つ」</b>こと。自院ローカルの検査コードや独自フォーマットのままでは、繋いでも意味が伝わらない。FHIR が<b>構造</b>（どう運ぶか）、JLAC が<b>意味</b>（何の検査か）を担う——この2つを揃えて初めて相互運用になる。</p>
+    <p class="lead">本編は「深掘り編」。②が「標準対応は要件」（Why）、本編が「どう実装するか」（How）、<b>移行プレイブック</b>が「いつ変換を仕込むか」（When）、<b>データインテグリティ編</b>が「変換しても真正性を保つ」（Integrity）に接続する。</p>
+  </div>
+
+  <!-- 0 スコープと網羅性 -->
+  <section>
+    <h2>このガイドのスコープと網羅性の根拠</h2>
+    <h3>スコープ宣言（対象と対象外）</h3>
+    <table>
+      <thead><tr><th>区分</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><b>対象</b></td><td>臨床検査データの<b>相互運用実装</b>：HL7 FHIR R4（JP Core / JP-CLINS）のリソース設計、JLAC10→JLAC11 とローカルコードの名寄せ、HL7 v2 からの変換、電子カルテ情報共有サービスへの接続の考え方。</td></tr>
+        <tr><td><b>対象外</b></td><td>① 標準対応が<b>なぜ要件か</b>（法規制・調達）→ シリーズ<b>②</b>。② 変換を<b>いつ仕込むか</b>（移行の段取り）→ <b>移行プレイブック</b>。③ 変換後も<b>真正性を保つ</b>方法 → <b>データインテグリティ編</b>。④ API 基盤の<b>セキュア実装</b>（OAuth/認可の作り込み）→ <b>④</b>。⑤ 製品個別のマッピング表（ベンダー依存）。</td></tr>
+      </tbody>
+    </table>
+    <h3>網羅性の根拠 — なぜ「これで足りる」と言えるか</h3>
+    <p>相互運用は「構造」と「意味」の両輪。どちらが欠けても繋がらない。本編は2軸で押さえる。</p>
+    <ul>
+      <li><b>軸1：構造（FHIR）</b>＝検査を表す3リソース（DiagnosticReport / Observation / Specimen）を JP Core プロファイルに沿って設計（§3）。検査データの構造を漏れなくカバー。</li>
+      <li><b>軸2：意味（コード体系）</b>＝検査項目 JLAC、単位 UCUM、その他必要なコードを正しく載せる（§4）。「何の検査か」を相手が一意に解釈できるようにする。</li>
+    </ul>
+    <p class="lead">この2軸で「運ぶ器（FHIR）」と「中身の意味（コード）」を揃える。実装の残リスクは「①追加技術／②運用／③契約・SLA／④受容」の4分類で引き取る。</p>
+  </section>
+
+  <!-- 1 標準の地図 -->
+  <section>
+    <h2><span class="n">1</span>標準の地図 — どれが何を担うか</h2>
+    <table>
+      <thead><tr><th>標準</th><th>版・主体</th><th>役割</th></tr></thead>
+      <tbody>
+        <tr><td><b>HL7 FHIR</b></td><td>R4（4.0.1）／HL7 International</td><td>データ交換の国際標準。REST API + JSON。日本の医療DXはこの R4 を採用</td></tr>
+        <tr><td><b>JP Core 実装ガイド</b></td><td>v1.2.0-a（2025-01、FHIR R4 ベース）／JAMI</td><td>FHIR を日本の臨床に合わせたプロファイル集。検査では Observation/DiagnosticReport/Specimen 等を規定</td></tr>
+        <tr><td><b>JP-CLINS 実装ガイド</b></td><td>v1.11.0／jpfhir.jp</td><td>電子カルテ情報共有サービス向け FHIR 実装ガイド（<b>2文書5情報＋患者サマリー</b>）。共有のための具体仕様</td></tr>
+        <tr><td><b>JLAC11</b>（臨床検査項目分類コード）</td><td>日本臨床検査医学会／<b>厚労省推奨</b></td><td>「何の検査か」を一意に表す国内コード。データ統合・2次利用向け。JLAC10（HS014 臨床検査マスターで定着）と<b>併行運用中</b></td></tr>
+        <tr><td><b>UCUM</b></td><td>国際</td><td>検査値の単位を機械可読に（mg/dL 等）。FHIR の Quantity で使用</td></tr>
+        <tr><td>（参考）HL7 v2.5 / ASTM</td><td>従来規格</td><td>装置 IF・既存連携で広く使用。FHIR への変換元になる</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <div class="lab">役割分担の核心</div>
+      <b>FHIR が「構造」、JLAC が「意味」。</b> FHIR は「これは検査報告で、中にこういう結果項目がある」という器を標準化する。JLAC は「その項目が血清クレアチニンだ」という意味を一意に与える。両方揃えて初めて、受け取った別システムが「これは Cr の値だ」と機械的に理解できる。<b>FHIR だけ対応してもローカルコードのままなら、繋がっても意味は伝わらない。</b>
+    </div>
+  </section>
+
+  <!-- 2 検査の FHIR リソース -->
+  <section>
+    <h2><span class="n">2</span>検査を表す 3 つの FHIR リソース</h2>
+    <p>臨床検査は主に次の3リソースで表現する（JP Core プロファイルに準拠）。</p>
+    <table>
+      <thead><tr><th>リソース</th><th>表すもの</th><th>検査での要点</th></tr></thead>
+      <tbody>
+        <tr><td><span class="res">DiagnosticReport</span></td><td>検査報告全体（オーダ単位の報告）</td><td>報告のまとまり。結果（Observation）への参照、検体（Specimen）への参照、報告日時、ステータス（final/preliminary 等）を持つ</td></tr>
+        <tr><td><span class="res">Observation</span></td><td>個々の検査結果項目</td><td>1項目1リソース。<b>code に JLAC</b>（何の検査か）、value に結果（数値＋<b>UCUM 単位</b>、または定性値）、基準範囲、判定（H/L 等）</td></tr>
+        <tr><td><span class="res">Specimen</span></td><td>検体</td><td>検体種別（血清・尿・組織等）、採取日時、検体 ID。DiagnosticReport/Observation から参照</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>「Observation の code に何を入れるか」が実装の分かれ目。</b> ここに自院ローカルコードを入れると相互運用にならない。<b>JLAC（できれば JLAC11）を載せる</b>のが標準。必要に応じてローカルコードを併記（CodeableConcept は複数 coding を持てる）するが、標準コードが主、ローカルが従。</div>
+  </section>
+
+  <!-- 3 コード変換 -->
+  <section>
+    <h2><span class="n">3</span>コード変換 — ローカル → JLAC11、v2 → FHIR</h2>
+    <div class="flow">
+      <div class="s"><div class="t">装置 / 既存IF</div><div class="d">HL7 v2.5・ASTM・ファイル、ローカルコード</div></div>
+      <div class="a">→</div>
+      <div class="s"><div class="t">マッピング</div><div class="d">ローカル→JLAC、単位→UCUM、v2セグメント→FHIR要素</div></div>
+      <div class="a">→</div>
+      <div class="s"><div class="t">FHIR リソース</div><div class="d">DiagnosticReport / Observation / Specimen（JP Core）</div></div>
+      <div class="a">→</div>
+      <div class="s"><div class="t">共有 / 連携</div><div class="d">JP-CLINS で電子カルテ情報共有サービスへ</div></div>
+    </div>
+    <h3>JLAC10 → JLAC11 と名寄せの勘どころ</h3>
+    <ul>
+      <li><b>ローカルコード → JLAC のマッピング表を作る</b>のが最初の山。自院の検査項目を JLAC（JLAC11 推奨、当面 JLAC10 併行）に対応づける。HS014 臨床検査マスターを参照基盤に</li>
+      <li><b>未マッピング項目の扱いを決める</b>：標準コードが無い独自項目は、暫定の扱い（ローカルのみ＋将来対応フラグ）を明文化。「とりあえず空」は禁物</li>
+      <li><b>1依頼・複数報告</b>等の構造差に注意（JLAC11 は 2025-02 改訂で識別コードの規定が見直された）。版とコード表の更新を追う</li>
+      <li><b>変換は一方向で終わらせない</b>：マッピングの正しさを検証データで突合（移行プレイブックのリハーサルと同じ規律）</li>
+    </ul>
+    <h3>HL7 v2 → FHIR 変換</h3>
+    <ul>
+      <li>装置 IF や既存連携の多くは HL7 v2.5（OBR/OBX セグメント等）。これを FHIR の DiagnosticReport/Observation に対応づける</li>
+      <li>v2 の OBX-3（検査項目コード）→ Observation.code（JLAC）、OBX-5（値）→ Observation.value、単位 → UCUM</li>
+      <li>変換ロジックはアプリ層で実装し、テストで網羅検証（②④のセキュア実装・DI と接続）</li>
+    </ul>
+  </section>
+
+  <!-- 4 電子カルテ情報共有サービス接続 -->
+  <section>
+    <h2><span class="n">4</span>電子カルテ情報共有サービスへの接続</h2>
+    <p>国の<b>電子カルテ情報共有サービス</b>（2025年度稼働）は、医療機関間で診療情報を HL7 FHIR で共有する仕組み。検査情報もここに乗る。</p>
+    <table>
+      <thead><tr><th>論点</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>共有の単位</td><td>厚労省は「3文書6情報」として打ち出し。FHIR 実装ガイド <b>JP-CLINS は「2文書5情報＋患者サマリー」</b>として整備（健診結果報告書は健診 FHIR で別建て）。6情報に<b>検査情報</b>が含まれる</td></tr>
+        <tr><td>方式</td><td>HL7 FHIR（REST API・JSON）。自院システムの診療情報を FHIR に変換して連携</td></tr>
+        <tr><td>検査の載せ方</td><td>検査情報を JP-CLINS / JP Core のプロファイルに沿って Observation 等で表現。コードは JLAC、単位は UCUM</td></tr>
+        <tr><td>認可・セキュリティ</td><td>API 接続は OAuth 2.0 等の認可、通信暗号化。具体実装は<b>④セキュア実装</b>へ</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <div class="lab">用語の整理（混乱しやすい）</div>
+      「3文書6情報」は<b>政策の打ち出し</b>、JP-CLINS の「2文書5情報＋患者サマリー」は<b>FHIR 実装の packaging</b>。健診結果報告書は健診 FHIR、患者サマリーが別途加わる、という整理。提案書では「電子カルテ情報共有サービス（FHIR 実装は JP-CLINS）」と書けば取り違えない。
+    </div>
+  </section>
+
+  <!-- 5 バリデーションと落とし穴 -->
+  <section>
+    <h2><span class="n">5</span>バリデーションとよくある落とし穴</h2>
+    <h3>バリデーション</h3>
+    <ul>
+      <li>生成した FHIR リソースを<b>JP Core / JP-CLINS プロファイルで検証</b>（必須要素・カーディナリティ・コード体系）。FHIR Validator を CI に組み込む</li>
+      <li>コード変換の<b>全件突合</b>：ローカル→JLAC、v2→FHIR の結果をサンプリングでなく機械照合</li>
+      <li>版の追従：FHIR R4・JP Core・JP-CLINS・JLAC11 は更新される。版を固定しつつ更新を追うプロセスを持つ（保守の仕組みはシリーズ目次のリンクチェック等と同様）</li>
+    </ul>
+    <ul class="chk">
+      <li><b>Observation.code にローカルコードだけ</b> → 相互運用にならない。JLAC を主に。</li>
+      <li><b>単位を文字列で持つ</b> → 機械処理不能。UCUM で。</li>
+      <li><b>未マッピング項目を空で流す</b> → 受け側で欠落。暫定扱いを明文化。</li>
+      <li><b>「FHIR 出力できた」で検証を省く</b> → プロファイル不適合のまま連携。Validator 必須。</li>
+      <li><b>「3文書6情報」と「2文書5情報＋患者サマリー」を混同</b> → 提案の正確性を損なう。JP-CLINS の packaging を正確に。</li>
+      <li><b>版を固定せず追従もしない</b> → ある日連携が壊れる。版管理＋更新追跡を。</li>
+      <li><b>変換で真正性が落ちる</b> → 誰が・いつ・どう変換したかを残す（データインテグリティ編）。</li>
+    </ul>
+  </section>
+
+  <footer>
+    <div class="refs">
+      <h3>出典（一次資料・公的情報）</h3>
+      <ul>
+        <li>HL7 FHIR R4（4.0.1）：<a href="https://hl7.org/fhir/R4/" target="_blank" rel="noopener">hl7.org/fhir/R4</a></li>
+        <li>JAMI「<a href="https://jpfhir.jp/fhir/core/1.2.0-a/index.html" target="_blank" rel="noopener">HL7 FHIR JP Core 実装ガイド v1.2.0-a</a>」（2025-01、FHIR R4 ベース）</li>
+        <li>「<a href="https://jpfhir.jp/fhir/clins/igv1/" target="_blank" rel="noopener">電子カルテ情報共有サービス FHIR 実装ガイド JP-CLINS v1.11.0</a>」（2文書5情報＋患者サマリー）</li>
+        <li>日本臨床検査医学会 検査項目コード委員会「<a href="https://www.jslm.org/committees/code/" target="_blank" rel="noopener">臨床検査項目分類コード（JLAC10 / JLAC11）</a>」</li>
+        <li>厚生労働省 標準規格「HS014 臨床検査マスター」（JLAC10 を活用）／厚労省は臨床検査コードに <b>JLAC11 を推奨</b>、JLAC10 と併行運用</li>
+        <li>厚生労働省「電子カルテ情報共有サービス」（2025年度稼働、HL7 FHIR で共有）</li>
+        <li>（接続）シリーズ ②法規制対応と技術要件 ／ ④セキュア実装 ／ 移行プレイブック ／ データインテグリティ編</li>
+      </ul>
+    </div>
+    <div class="disc">本ガイドは 2026 年5月時点の公的・公式情報と各実装ガイドに基づく一般整理であり、特定の組織・案件における適合性や十分性を保証するものではない。FHIR R4 / JP Core / JP-CLINS / JLAC11 は版が更新される（JP Core 1.3.0-dev 開発中、JLAC11 コード表は随時更新）。実装にあたっては各実装ガイドの最新版・コード表と、自院システム・ベンダー仕様で検証すること。</div>
+    <div class="sig">作成：X Harumi ／ 医療DX シリーズ・FHIR/JLAC11 実装 ／ 最終更新：2026年5月</div>
+  </footer>
+
+</div>
+
+<div style="max-width:1000px;margin:8px auto 40px;padding:0 20px;font-family:'Hiragino Sans','Yu Gothic','Meiryo',sans-serif">
+  <div style="background:#0e4d92;color:#fff;border-radius:12px;padding:20px 24px">
+    <div style="font-size:11.5px;letter-spacing:.16em;color:#c9d6e8;font-weight:700;margin-bottom:7px">ABOUT</div>
+    <p style="margin:0;font-size:13.5px;line-height:1.85">本シリーズは、医療情報システムの開発・クラウド化を手がける <b style="color:#c9a96e">X Harumi</b> が、公的な一次資料を根拠条項まで遡って再整理したものです。AI 活用支援・業務効率化・DX 推進・システム開発を提供しています。</p>
+  </div>
+  <div style="text-align:center;color:#94a3b4;font-size:11px;margin-top:10px">最終更新：2026-05-25 ／ 次回レビュー目安：2026-08-31 ／ © X Harumi</div>
+</div>
+
+</body>
+</html>
